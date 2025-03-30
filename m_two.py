@@ -20,10 +20,12 @@ class M2ClientApp(QtWidgets.QDialog):
         self.server_ip = self.config.get("Client", "ip", fallback="localhost")
         self.server_port = self.config.getint("Client", "port", fallback=12345)
         self.reconnect_interval = self.config.getint("Client", "reconnect_interval", fallback=5)
-        self.response_timeout = self.config.getint("Client", "response_timeout", fallback=10)
+        self.response_timeout = self.config.getint("Client", "response_timeout", fallback=5)
         self.exchange_timeout = self.config.getint("Client", "exchange_timeout", fallback=15)
         self.com_port = self.config.get("COM", "portcom", fallback="COM25")
         self.baudrate = self.config.getint("COM", "baudrate", fallback=9600)
+        self.timeout_checkbox = self.config.getint("Server", "timeout_checkbox", fallback=10)
+
         self.heartbeat_threshold = 3  # Heartbeat отправляется, если нет ответа от M1 2 секунды
 
         self.client_socket = None
@@ -45,6 +47,7 @@ class M2ClientApp(QtWidgets.QDialog):
                 try:
                     self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self.client_socket.connect((self.server_ip, self.server_port))
+                    self.shutdown_sent = False
                     threading.Thread(target=self.handle_server, daemon=True).start()
                 except Exception as e:
                     print(f"M2: Ошибка подключения к M1: {e}")
@@ -77,10 +80,11 @@ class M2ClientApp(QtWidgets.QDialog):
 
     def handle_com_port(self):
         while self.running:
-            if not self.serial_port:
+            if not self.serial_port or not self.serial_port.is_open:
                 try:
                     self.serial_port = serial.Serial(self.com_port, self.baudrate, timeout=1)
                     print(f"M2: COM-порт {self.com_port} открыт")
+                    self.shutdown_sent = False
                 except Exception as e:
                     print(f"M2: Ошибка открытия COM-порта: {e}")
                     time.sleep(self.reconnect_interval)
@@ -129,6 +133,16 @@ class M2ClientApp(QtWidgets.QDialog):
                         print(f"M2: Отправлен heartbeat в M3: {heartbeat_message.hex()} в {time.strftime('%H:%M:%S')}")
                     except Exception as e:
                         print(f"M2: Ошибка отправки heartbeat: {e}")
+            if time_since_m1 > self.timeout_checkbox and not self.shutdown_sent:
+                if self.serial_port:
+                    try:
+                        shutdown_signal = struct.pack('>B B H B B', 6, 0xFF, 0, 0xFF, 0xFF)
+                        self.serial_port.write(shutdown_signal)
+                        print(f"M2: Отправлен сигнал завершения в M3: {shutdown_signal.hex()} в {time.strftime('%H:%M:%S')}")
+                        self.serial_port = None
+                        self.shutdown_sent = True
+                    except Exception as e:
+                        print(f"M2: Ошибка отправки сигнала завершения: {e}")
             time.sleep(1)
 
     def send_shutdown_request(self):

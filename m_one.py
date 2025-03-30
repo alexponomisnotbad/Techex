@@ -22,6 +22,7 @@ class M1ServerApp(QtWidgets.QDialog):
         self.ip = self.config.get("Server", "ip", fallback="localhost")
         self.port = self.config.getint("Server", "port", fallback=12345)
         self.timeout = self.config.getint("Server", "timeout", fallback=30)
+        self.timeout_checkbox = self.config.getint("Server", "timeout_checkbox", fallback=10)
 
         self.server_socket = None
         self.running = False
@@ -105,12 +106,14 @@ class M1ServerApp(QtWidgets.QDialog):
 
     def check_timeout(self):
         while self.running:
-            # Убрано автоматическое завершение по тайм-ауту, оставлено только логирование
-            current_time = time.time()
-            if current_time - self.last_response_time >= self.timeout:
-                print(f"M1: Прошло {self.timeout} сек с последнего сообщения")
+            if not self.respondCheckBox.isChecked():
+                start_time = time.time()
+            while not self.respondCheckBox.isChecked():
+                if time.time() - start_time >= self.timeout_checkbox:
+                    self.shutdown()
+                    break
             time.sleep(1)
-
+    
     def shutdown(self):
         self.running = False
         if self.server_socket:

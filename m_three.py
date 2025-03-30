@@ -81,6 +81,12 @@ class M3App(QtWidgets.QDialog):
                     self.waiting_for_response = False  # Сбрасываем флаг
                     self.package_number += 1          # Увеличиваем номер пакета
                     self.send_request()               # Отправляем следующий запрос
+            elif msg_type == 0xFF and n == 6:  # Сигнал завершения от M2
+                package_number = (message[2] << 8) | message[3]
+                packet_data = message[4:n]
+                if packet_data == b'\xFF\xFF':
+                    print("M3: Получен сигнал завершения от M2, завершение работы")
+                    self.shutdown()
 
     def check_response_timeout(self):
         while self.running:
